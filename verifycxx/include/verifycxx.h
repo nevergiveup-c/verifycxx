@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <utility>
-#include <type_traits>
 
 #if defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -18,6 +17,12 @@
 #else
 #define FORCEINLINE __forceinline
 #endif
+
+constexpr uint64_t splitmix64(uint64_t x) {
+    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+    return x ^ (x >> 31);
+}
 
 struct verifycxx_header {
     static auto constexpr VDH_MAGIC = 0x5644482F; //VDH/
@@ -45,36 +50,36 @@ public:
     explicit verifycxx_modify_guard(verifycxx<Type>& parent) : parent(parent) {}
     ~verifycxx_modify_guard() { parent.update_checksum(); }
 
-    Type* operator->() { return parent.data; }
-    Type& operator*() { return *parent.data; }
+    Type* operator->() { return parent.data(); }
+    Type& operator*() { return *parent.data(); }
 
-    Type& operator=(const Type& rhs) { return *parent.data = rhs; }
+    Type& operator=(const Type& rhs) { return *parent.data() = rhs; }
 
-    Type& operator+=(const Type& rhs) { *parent.data += rhs; return *parent.data; }
-    Type& operator-=(const Type& rhs) { *parent.data -= rhs; return *parent.data; }
-    Type& operator*=(const Type& rhs) { *parent.data *= rhs; return *parent.data; }
-    Type& operator/=(const Type& rhs) { *parent.data /= rhs; return *parent.data; }
-    Type& operator%=(const Type& rhs) { *parent.data %= rhs; return *parent.data; }
+    Type& operator+=(const Type& rhs) { *parent.data() += rhs; return *parent.data(); }
+    Type& operator-=(const Type& rhs) { *parent.data() -= rhs; return *parent.data(); }
+    Type& operator*=(const Type& rhs) { *parent.data() *= rhs; return *parent.data(); }
+    Type& operator/=(const Type& rhs) { *parent.data() /= rhs; return *parent.data(); }
+    Type& operator%=(const Type& rhs) { *parent.data() %= rhs; return *parent.data(); }
 
-    Type& operator&=(const Type& rhs) { *parent.data &= rhs; return *parent.data; }
-    Type& operator|=(const Type& rhs) { *parent.data |= rhs; return *parent.data; }
-    Type& operator^=(const Type& rhs) { *parent.data ^= rhs; return *parent.data; }
-    Type& operator<<=(const Type& rhs) { *parent.data <<= rhs; return *parent.data; }
-    Type& operator>>=(const Type& rhs) { *parent.data >>= rhs; return *parent.data; }
+    Type& operator&=(const Type& rhs) { *parent.data() &= rhs; return *parent.data(); }
+    Type& operator|=(const Type& rhs) { *parent.data() |= rhs; return *parent.data(); }
+    Type& operator^=(const Type& rhs) { *parent.data() ^= rhs; return *parent.data(); }
+    Type& operator<<=(const Type& rhs) { *parent.data() <<= rhs; return *parent.data(); }
+    Type& operator>>=(const Type& rhs) { *parent.data() >>= rhs; return *parent.data(); }
 
-    Type& operator++() { ++(*parent.data); return *parent.data; }
-    Type operator++(int) { return (*parent.data)++; }
-    Type& operator--() { --(*parent.data); return *parent.data; }
-    Type operator--(int) { return (*parent.data)--; }
+    Type& operator++() { ++(*parent.data()); return *parent.data(); }
+    Type operator++(int) { return (*parent.data())++; }
+    Type& operator--() { --(*parent.data()); return *parent.data(); }
+    Type operator--(int) { return (*parent.data())--; }
 
-    Type operator+(const Type& rhs) const { return *parent.data + rhs; }
-    Type operator-(const Type& rhs) const { return *parent.data - rhs; }
-    Type operator*(const Type& rhs) const { return *parent.data * rhs; }
-    Type operator/(const Type& rhs) const { return *parent.data / rhs; }
-    Type operator%(const Type& rhs) const { return *parent.data % rhs; }
+    Type operator+(const Type& rhs) const { return *parent.data() + rhs; }
+    Type operator-(const Type& rhs) const { return *parent.data() - rhs; }
+    Type operator*(const Type& rhs) const { return *parent.data() * rhs; }
+    Type operator/(const Type& rhs) const { return *parent.data() / rhs; }
+    Type operator%(const Type& rhs) const { return *parent.data() % rhs; }
 
     template<typename T = Type> auto& operator[](size_t i) requires requires(T t) { t[i]; } {
-        return (*parent.data)[i];
+        return (*parent.data())[i];
     }
 
 private:
@@ -85,20 +90,34 @@ template <class Type> class verifycxx : public verifycxx_header {
     friend class verifycxx_modify_guard<Type>;
     using modify_guard = verifycxx_modify_guard<Type>;
 public:
+
+    static constexpr bool use_soo = std::is_scalar_v<Type> &&
+        sizeof (Type) < sizeof(uint64_t);
+    using storage_type = std::conditional_t<use_soo, Type, Type*>;
+
     template <typename... Args>
     explicit verifycxx(Args&&... args) : verifycxx_header(sizeof(Type)) {
         if constexpr (sizeof...(Args) == 1 && std::is_scalar_v<Type>) {
-            data = new Type(std::forward<Args>(args)...);
+            if constexpr (use_soo) {
+                storage = [](auto&& first, auto&&...) {
+                    return std::forward<decltype(first)>(first);
+                }(std::forward<Args>(args)...);
+            }
+            else {
+                storage = new Type(std::forward<Args>(args)...);
+            }
         }
         else {
-            data = new Type{ std::forward<Args>(args)... };
+            storage = new Type{std::forward<Args>(args)...};
         }
+
         checksum = gen_checksum();
     }
 
-    ~verifycxx() { delete data; }
+    ~verifycxx() requires use_soo = default;
+    ~verifycxx() requires (!use_soo) { delete storage; }
 
-    const Type* get() const noexcept { return data; }
+    const Type* get() const noexcept { return data(); }
     modify_guard modify() noexcept { return modify_guard(*this); }
 
     FORCEINLINE bool verify() const noexcept { return checksum == gen_checksum(); }
@@ -106,23 +125,32 @@ public:
 
     operator bool() const noexcept { return verify(); }
 
-    operator Type() const noexcept requires std::is_scalar_v<Type> { return *data; }
-    operator const char*() const requires requires(Type t) { t.c_str(); } { return data->c_str(); }
+    operator Type() const noexcept requires std::is_scalar_v<Type> { return *data(); }
+    operator const char*() const requires requires(Type t) { t.c_str(); } { return data()->c_str(); }
 
-    template<typename T = Type> auto& operator[](size_t i) requires requires(T t) { t[i]; } { return (*data)[i]; }
+    template<typename T = Type> auto& operator[](size_t i) requires requires(T t) { t[i]; } { return (*data())[i]; }
 
-    const Type& operator*() const noexcept { return *data; }
-    const Type* operator->() const noexcept { return data; }
+    const Type& operator*() const noexcept { return *data(); }
+    const Type* operator->() const noexcept { return data(); }
 
-    auto begin() const noexcept { return data->begin(); }
-    auto end() const noexcept { return data->end(); }
+    auto begin() const noexcept { return data()->begin(); }
+    auto end() const noexcept { return data()->end(); }
 
-private:
-    uint64_t process_simd(const uint8_t* ptr, size_t size) const;
+//private:
+    Type* data() {
+        if constexpr (use_soo) return &storage;
+        else return storage;
+    }
+    const Type* data() const {
+        if constexpr (use_soo) return &storage;
+        else return storage;
+    }
+
+    FORCEINLINE uint64_t process_simd(const uint8_t* ptr, size_t size) const;
     FORCEINLINE uint64_t gen_checksum() const;
-    void update_checksum() { checksum = gen_checksum(); }
+    FORCEINLINE void update_checksum() { checksum = gen_checksum(); }
 
-    Type* data{};
+    storage_type storage{};
     uint64_t checksum{};
 };
 
@@ -172,6 +200,6 @@ template<class Type> uint64_t verifycxx<Type>::process_simd(const uint8_t *ptr, 
 template<class Type> uint64_t verifycxx<Type>::gen_checksum() const {
     uint64_t sum = 0;
     sum += process_simd(reinterpret_cast<const uint8_t*>(this), sizeof(verifycxx_header));
-    sum += process_simd(reinterpret_cast<const uint8_t*>(data), sizeof(Type));
-    return sum;
+    sum += process_simd(reinterpret_cast<const uint8_t*>(data()), sizeof(Type));
+    return splitmix64(sum);
 }

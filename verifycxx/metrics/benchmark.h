@@ -1,8 +1,12 @@
 #pragma once
-#include <array>
-#include <benchmark/benchmark.h>
 
+#undef max;
+#undef min;
+
+#include <benchmark/benchmark.h>
 #include <include/verifycxx.h>
+
+#include <array>
 
 static void BM_ValueModify(benchmark::State& state) {
     verifycxx<int> value{ 100 };
