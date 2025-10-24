@@ -33,18 +33,6 @@ static void BM_ChecksumRecalculation(benchmark::State& state) {
 
 BENCHMARK(BM_ChecksumRecalculation);
 
-static void BM_RawPointerModify(benchmark::State& state) {
-    int* value = new int(100);
-    int i = 0;
-    for (auto _ : state) {
-        *value = i++;
-        benchmark::DoNotOptimize(i);
-    }
-    delete value;
-}
-
-BENCHMARK(BM_RawPointerModify);
-
 static void BM_ArrayModify(benchmark::State& state) {
     verifycxx<std::array<int, 10>> array{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
     for (auto _ : state) {
@@ -58,18 +46,14 @@ static void BM_ArrayModify(benchmark::State& state) {
 
 BENCHMARK(BM_ArrayModify);
 
-static void BM_RawArrayModify(benchmark::State& state) {
-    std::array<int, 10> array{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+static void BM_ArrayVerify(benchmark::State& state) {
+    verifycxx<std::array<int, 10>> array{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
     for (auto _ : state) {
-        int j = 0;
-        for (auto& val : array) {
-            val = j++;
-        }
-        benchmark::DoNotOptimize(j);
+        benchmark::DoNotOptimize(array.verify());
     }
 }
 
-BENCHMARK(BM_RawArrayModify);
+BENCHMARK(BM_ArrayVerify);
 
 static void BM_StringModify(benchmark::State& state) {
     verifycxx<std::string> str{ "test_string" };
@@ -80,16 +64,6 @@ static void BM_StringModify(benchmark::State& state) {
 }
 
 BENCHMARK(BM_StringModify);
-
-static void BM_RawStringModify(benchmark::State& state) {
-    std::string str{ "test_string" };
-    for (auto _ : state) {
-        str = "modified_string";
-        benchmark::DoNotOptimize(str);
-    }
-}
-
-BENCHMARK(BM_RawStringModify);
 
 static void BM_StringVerify(benchmark::State& state) {
     verifycxx<std::string> str{ "test_string" };
