@@ -140,7 +140,7 @@ TEST(VerifycxxTest, PrefixIncrementOperator)
     verifycxx<int> value{ 10 };
     auto guard = value.modify();
     ++guard;
-    EXPECT_EQ(*value.get(), 11);
+    EXPECT_EQ(*guard, 11);
 }
 
 TEST(VerifycxxTest, PostfixIncrementOperator)
@@ -149,7 +149,7 @@ TEST(VerifycxxTest, PostfixIncrementOperator)
     auto guard = value.modify();
     int old = guard++;
     EXPECT_EQ(old, 10);
-    EXPECT_EQ(*value.get(), 11);
+    EXPECT_EQ(*guard, 11);
 }
 
 TEST(VerifycxxTest, PrefixDecrementOperator)
@@ -157,7 +157,7 @@ TEST(VerifycxxTest, PrefixDecrementOperator)
     verifycxx<int> value{ 10 };
     auto guard = value.modify();
     --guard;
-    EXPECT_EQ(*value.get(), 9);
+    EXPECT_EQ(*guard, 9);
 }
 
 TEST(VerifycxxTest, PostfixDecrementOperator)
@@ -166,7 +166,7 @@ TEST(VerifycxxTest, PostfixDecrementOperator)
     auto guard = value.modify();
     int old = guard--;
     EXPECT_EQ(old, 10);
-    EXPECT_EQ(*value.get(), 9);
+    EXPECT_EQ(*guard, 9);
 }
 
 TEST(VerifycxxTest, AdditionOperator)
@@ -175,7 +175,7 @@ TEST(VerifycxxTest, AdditionOperator)
     auto guard = value.modify();
     int result = guard + 5;
     EXPECT_EQ(result, 15);
-    EXPECT_EQ(*value.get(), 10);
+    EXPECT_EQ(*guard, 10);
 }
 
 TEST(VerifycxxTest, SubtractionOperator)
@@ -231,8 +231,8 @@ TEST(VerifycxxTest, ArrayModifyIndexing)
     auto guard = array.modify();
     guard[0] = 100;
     guard[4] = 500;
-    EXPECT_EQ((*array.get())[0], 100);
-    EXPECT_EQ((*array.get())[4], 500);
+    EXPECT_EQ(guard[0], 100);
+    EXPECT_EQ(guard[4], 500);
 }
 
 TEST(VerifycxxTest, String)
@@ -265,8 +265,26 @@ TEST(VerifycxxTest, C_String)
 
 TEST(VerifycxxTest, CustomStruct)
 {
-    struct Player { int health; int mana; };
-    verifycxx<Player> player{ 100, 50 };
+    struct Vector3 {
+        float pos[3]{};
+    };
+
+    struct Entity {
+        float health{ 100.f }, armour{ 100.f };
+        Vector3 position{};
+    };
+
+    struct Player : Entity {
+        Player(const int uid, std::string n, const int l) :
+            uniqueId(uid), name(std::move(n)), level(l) {};
+        ~Player() = default;
+
+        int uniqueId{};
+        std::string name{};
+        int level{};
+    };
+
+    verifycxx<Player> player{ 1, "best_player", 999 };
 
     EXPECT_EQ(player.get()->health, 100);
     EXPECT_TRUE(player.verify());
@@ -277,9 +295,11 @@ TEST(VerifycxxTest, ModifyGuardArrow)
     struct Point { int x; int y; };
     verifycxx<Point> point{ 10, 20 };
 
-    auto guard = point.modify();
-    guard->x = 100;
-    guard->y = 200;
+    {
+        auto guard = point.modify();
+        guard->x = 100;
+        guard->y = 200;
+    }
 
     EXPECT_EQ(point.get()->x, 100);
 }
@@ -289,7 +309,7 @@ TEST(VerifycxxTest, ModifyGuardDereference)
     verifycxx<int> value{ 42 };
     auto guard = value.modify();
     *guard = 100;
-    EXPECT_EQ(*value.get(), 100);
+    EXPECT_EQ(*guard, 100);
 }
 
 TEST(VerifycxxTest, ModifyUpdatesChecksum)
@@ -322,8 +342,37 @@ TEST(VerifycxxTest, VectorModify)
 TEST(VerifycxxTest, VectorIndexModify)
 {
     verifycxx<std::vector<int>> vec{ 10, 20, 30 };
-    auto guard = vec.modify();
-    guard[1] = 999;
-    EXPECT_EQ((*vec.get())[1], 999);
+    vec.modify()[1] = 999;
     EXPECT_TRUE(vec.verify());
+}
+
+TEST(VerifycxxTest, MultiThreadVerify)
+{
+    verifycxx<int> val{ 1 };
+
+    std::thread t1([&] {
+        for (int i = 0; i < 1000000; i++) {
+            ++val.modify();
+        }
+    });
+
+    std::thread t2([&] {
+        static bool falied = false;
+        for (int i = 0; i < 1000000; i++) {
+            if (!val.verify()) {
+                falied = true;
+            }
+        }
+        EXPECT_FALSE(falied);
+    });
+
+    std::thread t3([&] {
+        for (int i = 0; i < 1000000; i++) {
+            --val.modify();
+        }
+    });
+
+    t3.join();
+    t2.join();
+    t1.join();
 }
