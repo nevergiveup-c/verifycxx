@@ -1,7 +1,7 @@
 #pragma once
 
-#undef max;
-#undef min;
+#undef max
+#undef min
 
 #include <benchmark/benchmark.h>
 #include <include/verifycxx.h>
