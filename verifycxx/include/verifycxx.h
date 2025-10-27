@@ -12,6 +12,18 @@
 #include <immintrin.h>
 #endif
 
+#if defined(_KERNEL_MODE) || defined(_WIN64_DRIVER) || \
+!defined(__STDC_HOSTED__) || (__STDC_HOSTED__ == 0)
+    #define NON_CRT_PROJECT
+#endif
+
+#if defined(NON_CRT_PROJECT)
+inline constexpr bool HAS_CRT = false;
+#else
+inline constexpr bool HAS_CRT = true;
+#include <shared_mutex>
+#endif
+
 #if defined(__clang__) || defined(__GNUC__)
 #define FORCEINLINE __attribute__((always_inline)) inline
 #else
@@ -40,7 +52,13 @@ private:
     std::atomic<bool>& guard;
 };
 
-#define LOCK_GUARD(guard) atomic_lock<> __guard__(guard);
+#if defined(NON_CRT_PROJECT)
+#define READ_LOCK(m)  atomic_lock<> __lock__(m);
+#define WRITE_LOCK(m) atomic_lock<> __lock__(m);
+#else
+#define READ_LOCK(m)  std::shared_lock<std::shared_mutex> __lock__(m);
+#define WRITE_LOCK(m) std::unique_lock<std::shared_mutex> __lock__(m);
+#endif
 
 struct verifycxx_header {
     static auto constexpr VDH_MAGIC = 0x5644482F; //VDH/
@@ -64,9 +82,10 @@ struct verifycxx_header {
 template <class Type> class verifycxx;
 
 template <typename Type> class verifycxx_modify_guard {
+    using lock_guard = std::conditional_t<HAS_CRT, std::unique_lock<std::shared_mutex>, atomic_lock<>>;
 public:
     explicit verifycxx_modify_guard(verifycxx<Type>& parent) :
-        parent(parent), lock(parent.guard) {}
+        parent(parent), lock(parent.mutex) {}
     ~verifycxx_modify_guard() { parent.update_checksum(); }
 
     Type* operator->() { return parent.data(); }
@@ -103,7 +122,7 @@ public:
 
 private:
     verifycxx<Type>& parent;
-    atomic_lock<> lock;
+    lock_guard lock;
 };
 
 template <class Type> class verifycxx : public verifycxx_header {
@@ -112,10 +131,9 @@ template <class Type> class verifycxx : public verifycxx_header {
         sizeof (Type) < sizeof(uint64_t);
     using modify_guard = verifycxx_modify_guard<Type>;
     using storage_type = std::conditional_t<use_soo, Type, Type*>;
+    using mutex_type = std::conditional_t<HAS_CRT, std::shared_mutex, std::atomic<bool>>;
 public:
-
-    template <typename... Args>
-    explicit verifycxx(Args&&... args) : verifycxx_header(sizeof(Type)) {
+    template <typename... Args> explicit verifycxx(Args&&... args) : verifycxx_header(sizeof(Type)) {
         if constexpr (sizeof...(Args) == 1 && std::is_scalar_v<Type>) {
             if constexpr (use_soo) {
                 storage = []<typename T0>(T0&& first, auto&&...) {
@@ -172,16 +190,16 @@ private:
 
     storage_type storage{};
     uint64_t checksum{};
-    mutable std::atomic<bool> guard{};
+    mutable mutex_type mutex{};
 };
 
 template<class Type> const Type* verifycxx<Type>::get() const noexcept {
-    LOCK_GUARD(guard)
+    READ_LOCK(mutex);
     return data();
 }
 
 template<class Type> bool verifycxx<Type>::verify() const noexcept {
-    LOCK_GUARD(guard)
+    READ_LOCK(mutex);
     return checksum == gen_checksum();
 }
 
