@@ -24,6 +24,24 @@ constexpr uint64_t splitmix64(uint64_t x) {
     return x ^ (x >> 31);
 }
 
+template<std::memory_order LOrder = std::memory_order_acquire,
+    std::memory_order ROrder = std::memory_order_release>
+class atomic_lock {
+public:
+    explicit atomic_lock(std::atomic<bool>& atm) : guard(atm) {
+        while (guard.exchange(true, LOrder)) {
+            _mm_pause();
+        }
+    }
+    ~atomic_lock() {
+        guard.store(false, ROrder);
+    }
+private:
+    std::atomic<bool>& guard;
+};
+
+#define LOCK_GUARD(guard) atomic_lock<> __guard__(guard);
+
 struct verifycxx_header {
     static auto constexpr VDH_MAGIC = 0x5644482F; //VDH/
     explicit verifycxx_header(const uint16_t size) {
@@ -47,7 +65,8 @@ template <class Type> class verifycxx;
 
 template <typename Type> class verifycxx_modify_guard {
 public:
-    explicit verifycxx_modify_guard(verifycxx<Type>& parent) : parent(parent) {}
+    explicit verifycxx_modify_guard(verifycxx<Type>& parent) :
+        parent(parent), lock(parent.guard) {}
     ~verifycxx_modify_guard() { parent.update_checksum(); }
 
     Type* operator->() { return parent.data(); }
@@ -84,23 +103,23 @@ public:
 
 private:
     verifycxx<Type>& parent;
+    atomic_lock<> lock;
 };
 
 template <class Type> class verifycxx : public verifycxx_header {
     friend class verifycxx_modify_guard<Type>;
-    using modify_guard = verifycxx_modify_guard<Type>;
-public:
-
     static constexpr bool use_soo = std::is_scalar_v<Type> &&
         sizeof (Type) < sizeof(uint64_t);
+    using modify_guard = verifycxx_modify_guard<Type>;
     using storage_type = std::conditional_t<use_soo, Type, Type*>;
+public:
 
     template <typename... Args>
     explicit verifycxx(Args&&... args) : verifycxx_header(sizeof(Type)) {
         if constexpr (sizeof...(Args) == 1 && std::is_scalar_v<Type>) {
             if constexpr (use_soo) {
-                storage = [](auto&& first, auto&&...) {
-                    return std::forward<decltype(first)>(first);
+                storage = []<typename T0>(T0&& first, auto&&...) {
+                    return std::forward<T0>(first);
                 }(std::forward<Args>(args)...);
             }
             else {
@@ -117,10 +136,11 @@ public:
     ~verifycxx() requires use_soo = default;
     ~verifycxx() requires (!use_soo) { delete storage; }
 
-    const Type* get() const noexcept { return data(); }
+    const Type* get() const noexcept;
+
     modify_guard modify() noexcept { return modify_guard(*this); }
 
-    FORCEINLINE bool verify() const noexcept { return checksum == gen_checksum(); }
+    FORCEINLINE bool verify() const noexcept;
     FORCEINLINE uint64_t get_checksum() const noexcept { return checksum; }
 
     operator bool() const noexcept { return verify(); }
@@ -136,7 +156,7 @@ public:
     auto begin() const noexcept { return data()->begin(); }
     auto end() const noexcept { return data()->end(); }
 
-//private:
+private:
     Type* data() {
         if constexpr (use_soo) return &storage;
         else return storage;
@@ -152,7 +172,18 @@ public:
 
     storage_type storage{};
     uint64_t checksum{};
+    mutable std::atomic<bool> guard{};
 };
+
+template<class Type> const Type* verifycxx<Type>::get() const noexcept {
+    LOCK_GUARD(guard)
+    return data();
+}
+
+template<class Type> bool verifycxx<Type>::verify() const noexcept {
+    LOCK_GUARD(guard)
+    return checksum == gen_checksum();
+}
 
 template<class Type> uint64_t verifycxx<Type>::process_simd(const uint8_t *ptr, size_t size) const {
     const uint16_t cookie = u.bits.cookie;
