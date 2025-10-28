@@ -361,6 +361,7 @@ TEST(VerifycxxTest, MultiThreadVerify)
         for (int i = 0; i < 1000000; i++) {
             if (!val.verify()) {
                 falied = true;
+                break;
             }
         }
         EXPECT_FALSE(falied);
