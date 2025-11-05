@@ -377,3 +377,25 @@ TEST(VerifycxxTest, MultiThreadVerify)
     t2.join();
     t1.join();
 }
+
+TEST(VerifycxxTest, MoveConstructor) {
+    struct Point { int x; int y; };
+
+    verifycxx<Point> point{ 10, 20 };
+    verifycxx newPoint{ std::move(point) };
+
+    EXPECT_EQ(point.get(), nullptr);
+    EXPECT_EQ(newPoint.get()->x, 10);
+    EXPECT_EQ(newPoint.get()->y, 20);
+}
+TEST(VerifycxxTest, MoveAssignment) {
+    struct Point { int x; int y; };
+
+    verifycxx<Point> point{ 10, 20 };
+    verifycxx<Point> newPoint{ 20, 10 };
+    newPoint = std::move(point);
+
+    EXPECT_EQ(point.get(), nullptr);
+    EXPECT_EQ(newPoint.get()->x, 10);
+    EXPECT_EQ(newPoint.get()->y, 20);
+}
