@@ -24,10 +24,12 @@ inline constexpr bool HAS_CRT = true;
 #include <shared_mutex>
 #endif
 
+#ifndef FORCEINLINE
 #if defined(__clang__) || defined(__GNUC__)
 #define FORCEINLINE __attribute__((always_inline)) inline
-#else
+#elif defined(_MSC_VER)
 #define FORCEINLINE __forceinline
+#endif
 #endif
 
 constexpr uint64_t splitmix64(uint64_t x) {
@@ -149,27 +151,45 @@ public:
         checksum = gen_checksum();
     }
 
+    verifycxx(verifycxx&& other) noexcept : verifycxx_header(other.u.bits.size) {
+        storage = std::exchange(other.storage, {});
+        checksum = gen_checksum();
+    }
+    verifycxx& operator=(verifycxx&& other) noexcept {
+        if (this != &other) {
+            if constexpr (!use_soo) {
+                delete storage;
+            }
+            storage = std::exchange(other.storage, {});
+            u = other.u;
+            checksum = gen_checksum();
+        }
+        return *this;
+    }
+    verifycxx(const verifycxx&) = delete;
+    verifycxx& operator=(const verifycxx&) = delete;
+
     ~verifycxx() requires use_soo = default;
     ~verifycxx() requires (!use_soo) { delete storage; }
 
-    const Type* get() const noexcept;
-    modify_guard modify() noexcept { return modify_guard(*this); }
+    FORCEINLINE const Type* get() const noexcept;
+    FORCEINLINE modify_guard modify() noexcept { return modify_guard(*this); }
 
     FORCEINLINE bool verify() const noexcept;
     FORCEINLINE uint64_t get_checksum() const noexcept { return checksum; }
 
-    operator bool() const noexcept { return verify(); }
+    FORCEINLINE operator bool() const noexcept { return verify(); }
 
-    operator Type() const noexcept requires std::is_scalar_v<Type> { return *data(); }
-    operator const char*() const requires requires(Type t) { t.c_str(); } { return data()->c_str(); }
+    FORCEINLINE operator Type() const noexcept requires std::is_scalar_v<Type> { return *data(); }
+    FORCEINLINE operator const char*() const requires requires(Type t) { t.c_str(); } { return data()->c_str(); }
 
-    const Type& operator*() const noexcept { return *data(); }
-    const Type* operator->() const noexcept { return data(); }
+    FORCEINLINE const Type& operator*() const noexcept { return *data(); }
+    FORCEINLINE const Type* operator->() const noexcept { return data(); }
 
-    template<typename T = Type> auto& operator[](size_t i) requires requires(T t) { t[i]; } { return (*data())[i]; }
+    template<typename T = Type> FORCEINLINE auto& operator[](size_t i) requires requires(T t) { t[i]; } { return (*data())[i]; }
 
-    auto begin() const noexcept { return data()->begin(); }
-    auto end() const noexcept { return data()->end(); }
+    FORCEINLINE auto begin() const noexcept { return data()->begin(); }
+    FORCEINLINE auto end() const noexcept { return data()->end(); }
 
 private:
     Type* data() {
