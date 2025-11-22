@@ -5,6 +5,7 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     auto const result = RUN_ALL_TESTS();
 
+    
     std::cout << '\n';
 
     if (result != 0) {
