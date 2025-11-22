@@ -1,7 +1,7 @@
 # verifycxx
 
 ## Description
-Header-only runtime-time data verification library for C++20 and later.
+Header-only runtime data verification library for C++20 and later.
 
 ## Reflections
 I came up with the idea for developing a data-verification library while I was working on a small test assignment. I needed to reverse a simple binary and locate its C2. Without getting into unnecessary details, the thing that really caught my attention was the idea of data modification performed by an overridden C procedure - the memcpy function. When certain conditions were met, this function replaced specific bytes in the program, which resulted in different data being produced for different clients. I found the concept quite interesting and decided to build a meta-wrapper that would make it easy to validate, read, modify, and move data.
