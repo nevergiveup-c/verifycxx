@@ -7,10 +7,11 @@ Header-only runtime-time data verification library for C++20 and later.
 I came up with the idea for developing a data-verification library while I was working on a small test assignment. I needed to reverse a simple binary and locate its C2. Without getting into unnecessary details, the thing that really caught my attention was the idea of data modification performed by an overridden C procedure - the memcpy function. When certain conditions were met, this function replaced specific bytes in the program, which resulted in different data being produced for different clients. I found the concept quite interesting and decided to build a meta-wrapper that would make it easy to validate, read, modify, and move data.
 
 I outlined a set of criteria my library should meet:
-1.The object must make it easy and fast to check whether the data has a wrapper.
-2.It must support data manipulation and integrity checks in a multithreaded environment.
-3.The library should be usable without the CRT or within a WDM environment.
-4.It must compile with GCC/Clang/MSVC while providing the same level of data protection across all of them.
+1. The object must make it easy and fast to check whether the data has a wrapper.
+2. It must support data manipulation and integrity checks in a multithreaded environment.
+3. The library should be usable without the CRT or within a WDM environment.
+4. It must compile with GCC/Clang/MSVC while providing the same level of data protection across all of them.
+
 I want to clarify here: before and after implementing this project I didn’t research whether similar solutions already existed. I’m more than sure that there are implementations out there that are much “cooler and better” than what I built. My solution may also have several drawbacks, like: a weak key, a simplistic checksum, and overall vulnerability to basic dynamic debugging. Without additional measures, this project is not quite strong as a protection mechanism. Still, I believe that if used correctly, it can make an attacker’s job harder or help detect their presence in the process.
 
 Everything above is to emphasize that this is still an unfinished PET-project with its own pros and cons, which I’ll be refining over time. Before using it for your own purposes, you should evaluate and test the library yourself to understand where and how it can be applied most effectively.
@@ -101,7 +102,7 @@ int main(int argc, char** argv) {
         while (true) {
             if (!value.verify()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                printf("Warning: memory corrupted\n");
+                printf("Warning: memory is corrupted\n");
             }
         }
      });
@@ -129,4 +130,4 @@ int main(int argc, char** argv) {
 
 ## Architecture Support:
 - `x86-64`
-- `ARM`
+- `ARM` (not tested yet)
